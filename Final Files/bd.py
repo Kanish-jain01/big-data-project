@@ -6,9 +6,10 @@ from pyspark.sql.functions import *
 from pyspark.streaming import StreamingContext
 #from pyspark.sql.DataFrame import  randomSplit
 from sklearn.model_selection import train_test_split
-from pyspark.ml.feature import HashingTF, IDF, Tokenizer, CountVectorizer, VectorAssembler,Tokenizer, RegexTokenizer, StringIndexer
+from pyspark.ml.feature import HashingTF, IDF, Tokenizer, RegexTokenizer, StringIndexer
 from pyspark.ml.classification import NaiveBayes
-from pyspark.ml.evaluation import BinaryClassificationEvaluator
+from pyspark.ml.evaluation import BinaryClassificationEvaluator, MulticlassClassificationEvaluator
+from pyspark.ml.feature import StopWordsRemover, CountVectorizer, VectorAssembler,Tokenizer, OneHotEncoder
 
 #creating a spark context
 sc = SparkContext("local[2]", "Sentiment")
@@ -67,6 +68,37 @@ def to_df(data):
 	df.show()
 	
 	print("IN")
+	
+	# regular expression tokenizer
+	regexTokenizer = RegexTokenizer(inputCol="feature1", outputCol="words", pattern="\\W")
+	# stop words
+	add_stopwords = ["http","https","amp","rt","t","c","the"] 
+	stopwordsRemover = StopWordsRemover(inputCol="words", outputCol="filtered").setStopWords(add_stopwords)
+	# bag of words count
+	#countVectors = CountVectorizer(inputCol="filtered", outputCol="features", vocabSize=90000, minDF=5)
+	
+	hashingTF = HashingTF(inputCol="filtered", outputCol="rawFeatures", numFeatures=10000)
+	idf = IDF(inputCol="rawFeatures", outputCol="features", minDocFreq=4) #minDocFreq: remove sparse terms
+	
+	label_stringIdx = StringIndexer(inputCol = "feature0", outputCol = "label")
+	nb = NaiveBayes(smoothing=1.0, modelType="multinomial")
+	#pipeline = Pipeline(stages=[regexTokenizer, stopwordsRemover, countVectors, label_stringIdx, nb])
+	
+	pipeline = Pipeline(stages=[regexTokenizer, stopwordsRemover, hashingTF, idf, label_stringIdx, nb])
+	
+	# Fit the pipeline to training documents.
+	(trainingData, testData) = df.randomSplit([0.8, 0.2], seed = 100)
+
+	lrModel = pipeline.fit(trainingData)
+	
+	predictions = lrModel.transform(testData)
+	
+	evaluator = MulticlassClassificationEvaluator(predictionCol="prediction")
+	accuracy = evaluator.evaluate(predictions)
+	
+	print ("Test Area Under ROC: ", accuracy)
+	
+	'''
 	# 1. clean data and tokenize sentences using RegexTokenizer
 	regexTokenizer = RegexTokenizer(inputCol="feature1", outputCol="tokens", pattern="\\W+")
 
@@ -95,6 +127,7 @@ def to_df(data):
 	accuracy = evaluator.evaluate(predictions)
 	print ("Test Area Under ROC: ", accuracy)
 	print("OUT")
+	'''
 
 #function to convert the datastream to a list
 def map_data(data):
