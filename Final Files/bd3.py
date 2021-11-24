@@ -35,42 +35,38 @@ def to_df(data):
 	#create dataframe from the streaming data
 	df = ss.createDataFrame(data, columns)
 	
-	# 1. clean data and tokenize sentences using RegexTokenizer
-	regexTokenizer = RegexTokenizer(inputCol="feature1", outputCol="tokens", pattern="\\W+")
-
+	regexTokenizer = RegexTokenizer(inputCol="feature1", outputCol="words", pattern="\\W")
+	# stop words remover
 	
-	# 2. CountVectorize the data
-	cv = CountVectorizer(inputCol="tokens", outputCol="token_features", minDF=2.0)
-
+	add_stopwords = ["http","https","amp","rt","t","c","the","a", "an"] 
+	stopwordsRemover = StopWordsRemover(inputCol="words", outputCol="filtered").setStopWords(add_stopwords)
 	
-	# 3. Convert the labels to numerical values using binariser
-	indexer = StringIndexer(inputCol="feature0", outputCol="label")
-
+	hashingTF = HashingTF(inputCol="filtered", outputCol="rawFeatures", numFeatures=10000)
+	idf = IDF(inputCol="rawFeatures", outputCol="features", minDocFreq=4) #minDocFreq: remove sparse terms
 	
-	# 4. Vectorise features using vectorassembler
-	vecAssembler = VectorAssembler(inputCols=['token_features'], outputCol="features")
-	
-	# Fit the model
-	#nb = NaiveBayes(smoothing=1.0, modelType="multinomial")
-
+	label_stringIdx = StringIndexer(inputCol = "feature0", outputCol = "label")
+	nb = NaiveBayes(smoothing=1.0, modelType="multinomial")
 	#lr = LogisticRegression(featuresCol = 'feature1', labelCol = 'label', maxIter=10)
-	dt = DecisionTreeClassifier(featuresCol = 'feature1', labelCol = 'label')
+	#dt = DecisionTreeClassifier(featuresCol = 'feature1', labelCol = 'label')
 	#rm = RandomForestClassifier(featuresCol = 'feature1', labelCol = 'label')
 	#gbt = GBTClassifier(featuresCol = 'feature1', labelCol = 'label', maxIter=10)
 	
-	#pipeline = Pipeline(stages=[regexTokenizer, cv, vecAssembler, indexer, nb])
+	pipeline = Pipeline(stages=[regexTokenizer, stopwordsRemover, hashingTF, idf, label_stringIdx, nb])
+	#pipeline = Pipeline(stages=[regexTokenizer, stopwordsRemover, hashingTF, idf, label_stringIdx, lr])
+	#pipeline = Pipeline(stages=[regexTokenizer, stopwordsRemover, hashingTF, idf, label_stringIdx, dt])
 	
-	#pipeline = Pipeline(stages=[regexTokenizer, cv, vecAssembler, indexer, lr])
-	pipeline = Pipeline(stages=[regexTokenizer, cv, vecAssembler, indexer, dt])
-	#pipeline = Pipeline(stages=[regexTokenizer, cv, vecAssembler, indexer, rm])
-	#pipeline = Pipeline(stages=[regexTokenizer, cv, vecAssembler, indexer, gbt])
+	#pipeline = Pipeline(stages=[regexTokenizer, stopwordsRemover, hashingTF, idf, label_stringIdx, rm])
+	#pipeline = Pipeline(stages=[regexTokenizer, stopwordsRemover, hashingTF, idf, label_stringIdx, dt])
+	#pipeline = Pipeline(stages=[regexTokenizer, stopwordsRemover, hashingTF, idf, label_stringIdx, gbt])
+	# Fit the pipeline to training documents.
 	
 	(trainingData, testData) = df.randomSplit([0.8, 0.2], seed = 10)
-	
+
 	model = pipeline.fit(trainingData)
 	
 	predictions = model.transform(testData)
 	
+	#evaluator = BinaryClassificationEvaluator(predictionCol="prediction")
 	evaluator = MulticlassClassificationEvaluator(predictionCol="prediction")
 	accuracy = evaluator.evaluate(predictions)
 	df.show()
@@ -82,7 +78,6 @@ def to_df(data):
 def map_data(data):
 
 	#load the incoming json file
-	
 	json_data=json.loads(data)
 	list_rec = list()
 	
